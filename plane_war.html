@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Document</title>
+  <meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+  <style>
+  body{
+    margin:0;
+    padding:0;
+  }
+  canvas {
+    display:block;
+    margin:0 auto;
+    box-sizing:border-box;
+    cursor:none;
+    /*border:1px solid;*/
+  }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <script>
+  (function () {
+    var TYPICAL_WIDTH = 480,
+        TYPICAL_HEIGHT = 853,
+        IMAGES_BASE_URL = 'plane_images/',
+        // IMAGES_BASE_URL = 'http://sandbox.runjs.cn/uploads/rs/30/7mnuxrh7/',
+        LOADING_IMAGES = ['bg.jpg', 'logo.png', 'loading1.png', 'loading2.png', 'loading3.png'],
+        GAME_IMAGES = ['cartridge.png', 'cartridge_power.png', 'die1.png', 'die2.png', 'me.png', 'me_2.png',
+                      'plain1.png', 'plain2.png', 'plain3.png', 'plain2_hurt.png', 'plain3_hurt.png',
+                      'plain1_die1.png', 'plain1_die2.png', 'plain1_die3.png',
+                      'plain2_die1.png', 'plain2_die2.png', 'plain2_die3.png', 'plain2_die4.png',
+                      'plain3_die1.png', 'plain3_die2.png', 'plain3_die3.png', 'plain3_die4.png', 'plain3_die5.png', 'plain3_die6.png',
+                      'me_die1.png', 'me_die2.png', 'me_die3.png', 'me_die4.png',
+                      'prop1.png', 'prop2.png', 'bomb.png', 'plain3_2.png']
+
+    var windowWidth,
+        canvas,
+        canvasWidth,
+        canvasHeight,
+        canvasContext,
+        dimensionRatio,
+        scaleRatio,
+        canvasBoundingClientRect,
+        images = {},
+        touchDevice = /iphone|ipad|android|ios/i.test(navigator.userAgent),
+        planeWar
+    init()
+
+    /**
+     * 初始化
+     */
+    function init () {
+      canvas = document.getElementById('canvas')
+      canvasContext = canvas.getContext('2d')
+      initCanvasDimension()
+      bindEvents()
+      loadGame()
+    }
+
+    /**
+     * 初始化元素尺寸
+     */
+    function initCanvasDimension () {
+      var _canvasWidth = canvasWidth, _canvasHeight = canvasHeight
+      windowWidth = window.innerWidth
+      canvasWidth = canvas.width = windowWidth > TYPICAL_WIDTH ? TYPICAL_WIDTH : windowWidth
+      dimensionRatio = canvasWidth / TYPICAL_WIDTH
+      canvasHeight = canvas.height = (touchDevice ? window.innerHeight : TYPICAL_HEIGHT * dimensionRatio)
+      canvasBoundingClientRect = canvas.getBoundingClientRect()
+      scaleRatio = canvasWidth / _canvasWidth
+    }
+
+    /**
+     * 为窗口绑定事件
+     */
+    function bindEvents () {
+      window.addEventListener('resize', function () {
+        initCanvasDimension()
+      }, false)
+    }
+
+    /**
+     * 创建 Image 对象
+     * @param  {String} src 图片的链接地址
+     * @return {Image}
+     */
+    function creatImageElement (src) {
+      var imageElement = new Image()
+      imageElement.src = src
+      return imageElement
+    }
+
+    function clearCanvas () {
+      canvasContext.clearRect(0, 0, canvasWidth, canvasHeight)
+    }
+
+    /**
+     * 中间填写文字
+     * @param  {String}    text    文字
+     * @param  {Object}    options offsetX: X 轴偏移; offsetY: Y 轴偏移
+     * @return {Undefined}
+     */
+    function fillTextCenter (text, options) {
+      var offsetX = options && options.offsetX || 0
+      var offsetY = options && options.offsetY || 0
+      var textX = (canvasWidth - canvasContext.measureText(text).width) / 2 + offsetX
+      var textY = canvasHeight / 2 + offsetY
+
+      canvasContext.fillText(text, textX, textY)
+    }
+
+    /**
+     * 图片加载的进度
+     * @param  {Array}      imagesOfArray        图片数组
+     * @param  {Function}   oneCompletedCallback 每个图片加载完成执行的回调
+     * @param  {Function}   allCompletedCallback 所有图片加载完成执行的回调
+     * @return {Undefined}
+     */
+    function imagesLoadProgress (imagesOfArray, oneCompletedCallback, allCompletedCallback) {
+        var loadingImagesLength = imagesOfArray.length,
+            progressPerImage = parseInt(100 / loadingImagesLength, 10),
+            loadedImagesCount = 0
+        for (var i = 0; i < loadingImagesLength; i++) {
+          creatImageElement(IMAGES_BASE_URL + imagesOfArray[i]).addEventListener('load', function () {
+            var src = this.src
+            var imageName = src.slice(src.lastIndexOf('/') + 1, src.lastIndexOf('.'))
+            loadedImagesCount++
+            images[imageName] = this
+            if (loadedImagesCount == loadingImagesLength) {
+              allCompletedCallback && allCompletedCallback.call(this, 100)
+            } else {
+              oneCompletedCallback && oneCompletedCallback.call(this, loadedImagesCount * progressPerImage)
+            }
+          }, false)
+        }
+    }
+
+    /**
+     * 游戏加载页面
+     */
+    function loadGame () {
+      var fillText = function (progress) {
+        canvasContext.save()
+        canvasContext.font = '30px 微软雅黑'
+        clearCanvas()
+        fillTextCenter('loading', {offsetY: -40})
+        fillTextCenter(progress + '%')
+        canvasContext.restore()
+      }
+      imagesLoadProgress(LOADING_IMAGES, fillText, function (progress) {
+        fillText(progress)
+        initStart()
+      })
+    }
+
+    /**
+     * 绘制背景
+     */
+    function drawBackground (y) {
+      canvasContext.drawImage(images['bg'], 0, y || 0, canvasWidth, canvasHeight)
+    }
+
+    /**
+     * 游戏初始化页面
+     */
+    function initStart () {
+      var logoWidth = images['logo'].width,
+          logoHeight = images['logo'].height,
+          loadingWidth = images['loading1'].width,
+          loadingHeight = images['loading1'].height,
+          loadingRealWidth = loadingWidth * dimensionRatio,
+          loadingRealHeight = loadingHeight * dimensionRatio,
+          loadingImageIndex = 0,
+          interval
+      var drawBgAndLogo = function () {
+        drawBackground()
+        canvasContext.drawImage(images['logo'], (canvasWidth - logoWidth * dimensionRatio) / 2, 40 * dimensionRatio, logoWidth * dimensionRatio, logoHeight * dimensionRatio)
+      }
+      var loadingAnimation = function () {
+        loadingImageIndex++
+        if (loadingImageIndex === 4) {
+          loadingImageIndex = 1
+        }
+        canvasContext.drawImage(images['loading' + loadingImageIndex], (canvasWidth - loadingRealWidth) / 2, 250 * dimensionRatio, loadingRealWidth, loadingRealHeight)
+      }
+      drawBgAndLogo()
+      loadingAnimation()
+      interval = setInterval(function () {
+        clearCanvas()
+        drawBgAndLogo()
+        loadingAnimation()
+      }, 1000)
+      imagesLoadProgress(GAME_IMAGES, null, function () {
+        playGame()
+        clearInterval(interval)
+      })
+    }
+
+    /**
+     * 游戏的舞台事件
+     */
+    function bindStageEvents () {
+      if (touchDevice) {
+        canvas.addEventListener('touchmove', function (e) {
+          if (!planeWar.me)
+            return
+          var coordinateToCanvasX = e.targetTouches[0].clientX - canvasBoundingClientRect.left
+          var coordinateToCanvasY = e.targetTouches[0].clientY - canvasBoundingClientRect.top
+
+          coordinateToCanvasX = coordinateToCanvasX < 0 ? 0 :
+            coordinateToCanvasX > canvasWidth ? canvasWidth : coordinateToCanvasX
+          coordinateToCanvasY = coordinateToCanvasY < 0 ? 0 :
+            coordinateToCanvasY > canvasHeight ? canvasHeight : coordinateToCanvasY
+
+          planeWar.me.moveTo(coordinateToCanvasX, coordinateToCanvasY)
+        }, false)
+
+        canvas.addEventListener('touchstart', function (e) {
+          if (!planeWar.isGameOver && planeWar.me.bomb) {
+            var touchX = e.targetTouches[0].clientX
+            var touchY = e.targetTouches[0].clientY
+            var startPoint = [canvasWidth - (images['bomb'].width + 10) * dimensionRatio, 0]
+            var endPoint = [canvasWidth - 10 * dimensionRatio, (images['bomb'].height + 10) * dimensionRatio * planeWar.me.bomb]
+            if (touchX >= startPoint[0] && touchX <= endPoint[0] && touchY >= startPoint[1] && touchY <= endPoint[1]) {
+              planeWar.bomb()
+            }
+            return
+          }
+        }, false)
+
+        // 双击使用炮弹
+        canvas.addEventListener('touchstart', (function () {
+          var dblSpan = 500
+          var lastTouchTimeStamp
+          return function (e) {
+            if (!lastTouchTimeStamp) {
+              lastTouchTimeStamp = Date.now()
+              return
+            }
+            var timeSpan = Date.now() - lastTouchTimeStamp
+              
+            // 双击
+            if (timeSpan > 0 && timeSpan <= dblSpan) {
+              lastTouchTimeStamp = null
+              if (!planeWar.isGameOver && planeWar.me.bomb) {
+                planeWar.bomb()
+              }
+            } else {
+              lastTouchTimeStamp = Date.now()
+            }
+          }
+        })(), false)
+
+        canvas.addEventListener('click', function () {
+          if (planeWar.isGameOver) {
+            planeWar = new GameStage()
+          }
+        }, false)
+      }else {
+        canvas.addEventListener('mousemove', function (e) {
+          if (!planeWar.me)
+            return
+          var coordinateToCanvasX = e.clientX - canvasBoundingClientRect.left
+          var coordinateToCanvasY = e.clientY - canvasBoundingClientRect.top
+
+          coordinateToCanvasX = coordinateToCanvasX < 0 ? 0 :
+            coordinateToCanvasX > canvasWidth ? canvasWidth : coordinateToCanvasX
+          coordinateToCanvasY = coordinateToCanvasY < 0 ? 0 :
+            coordinateToCanvasY > canvasHeight ? canvasHeight : coordinateToCanvasY
+
+          planeWar.me.moveTo(coordinateToCanvasX, coordinateToCanvasY)
+        }, false)
+        
+        document.body.addEventListener('keydown', function (e) {
+          if (planeWar.isGameOver)
+            return
+          var moveDistance = 25
+          switch (e.keyCode) {
+            case 37:
+              planeWar.me.centerX -= moveDistance
+              if (planeWar.me.centerX <= 0)
+                planeWar.me.centerX = 0
+              break
+            case 38:
+              planeWar.me.centerY -= moveDistance
+              if (planeWar.me.centerY <= 0)
+                planeWar.me.centerY = 0
+              break
+            case 39:
+              planeWar.me.centerX += moveDistance
+              if (planeWar.me.centerX >= canvasWidth)
+                planeWar.me.centerX = canvasWidth
+              break
+            case 40:
+              planeWar.me.centerY += moveDistance
+              if (planeWar.me.centerY >= canvasHeight)
+                planeWar.me.centerY = canvasHeight
+          }
+        }, false)
+      }
+
+      document.body.addEventListener('keyup', function (e) {
+        // 重新开始游戏
+        if (planeWar.isGameOver && e.keyCode === 13) {
+          planeWar = new GameStage()
+
+        // 使用炸弹
+        } else if (!planeWar.isGameOver && planeWar.me.bomb && e.keyCode === 32) {
+          planeWar.bomb()
+        }
+      }, false)
+      
+      window.addEventListener('resize', function () {
+        var reposition = function (stageObjects) {
+          var stageObjectsLength = stageObjects.length
+          var stageObject
+          for (var i = 0; i < stageObjectsLength; i++) {
+            stageObject = stageObjects[i]
+            if (!stageObject)
+              continue
+              
+            stageObject.centerX = stageObject.centerX * scaleRatio
+            stageObject.centerY = stageObject.centerY * scaleRatio
+          }
+        }
+        
+        reposition([].concat(planeWar.me, planeWar.enemies, planeWar.props, planeWar.cartridges, planeWar.deads))
+      }, false)
+    }
+
+    /**
+     * 开始游戏
+     */
+    function playGame () {
+      clearCanvas()
+      planeWar = new GameStage()
+      bindStageEvents()
+    }
+    
+    /**
+     * 绘制舞台对象
+     * @param  {StageObject}   stageObject 要绘制的舞台对象
+     */
+    function drawStageObject (stageObject) {
+      if (!stageObject)
+        return
+      var draw = function (image) {
+        canvasContext.drawImage(image,
+          stageObject.centerX - stageObject.width * dimensionRatio / 2, stageObject.centerY - stageObject.height * dimensionRatio / 2,
+          stageObject.width * dimensionRatio, stageObject.height * dimensionRatio)
+      }
+      if (stageObject.alternative && (Date.now() - stageObject.lastAlternativeTimeStamp >= stageObject.alternativeSpan)) {
+        stageObject.lastAlternativeTimeStamp = Date.now()
+        draw(stageObject.alternative)
+      } else {
+        draw(stageObject.image)
+      }
+    }
+
+    /**
+     * 绘制一组舞台对象
+     * @param  {Array}   stageObjects
+     */
+    function drawStageObjects (stageObjects) {
+      for (var i = 0; i < stageObjects.length; i++) {
+        drawStageObject(stageObjects[i])
+      }
+    }
+    
+    function GameStage (enemyCount) {
+      this.me = new Plane('me')
+      this.enemies = []
+      this.props = []
+      this.cartridges = []
+      this.deads = []
+      this.backgroundScrollTop = 0
+      this.enemyCount = enemyCount || 5
+      this.deadPerformedTimeStamp = Date.now()
+      this.deadPerformedDuration = 100
+      this.isGameOver = false
+      this.score = 0
+      this.lastPropTimeStamp = Date.now()
+      this.propTimeSpan = 5000
+      this.stage = 0
+      this.init()
+    }
+
+    /**
+     * 初始化数据
+     */
+    GameStage.prototype.init = function () {
+      for (var i = 0; i < this.enemyCount; i++) {
+        this.createEnemyRandomly()
+      }
+      this.me.centerX = canvasWidth / 2
+      this.me.centerY = canvasHeight - this.me.height / 2
+      this.drawStage()
+    }
+
+    /**
+     * 绘制
+     */
+    GameStage.prototype.drawStage = function () {
+      clearCanvas()
+      drawBackground(this.backgroundScrollTop)
+      drawBackground(this.backgroundScrollTop - canvasHeight)
+      this.backgroundScrollTop++
+      if (this.backgroundScrollTop >= canvasHeight) {
+        this.backgroundScrollTop = 0
+      }
+      drawStageObject(this.me)
+      this.shot()
+      drawStageObjects(this.enemies)
+      drawStageObjects(this.cartridges)
+      drawStageObjects(this.props)
+      this.createProp()
+      this.drawScore()
+      this.drawDeads()
+      this.drawBomb()
+      this.move()
+      this.hitCheck()
+      if (this.isGameOver)
+        this.gameOver()
+      requestAnimationFrame(this.drawStage.bind(this))
+    }
+
+    /**
+     * 摧毁
+     */
+    GameStage.prototype.drawDeads = function () {
+      var deadsLength = this.deads.length
+      var dead
+      var deadImage
+      var deadsToBeRemoved = []
+
+      if (Date.now() - this.deadPerformedTimeStamp < this.deadPerformedDuration)
+        return
+
+      for (var i = 0; i < deadsLength; i++) {
+        dead = this.deads[i]
+        if (!dead)
+          return
+        deadImage = dead.deadImages.shift()
+        if (!deadImage) {
+          deadsToBeRemoved.push(dead)
+          continue
+        }
+        dead.image = deadImage
+        drawStageObject(dead)
+      }
+
+      this.deadPerformedTimeStamp = Date.now()
+
+      deadsToBeRemoved.forEach(function (dead) {
+        this.deads.splice(this.deads.indexOf(dead), 1)
+      }.bind(this))
+    }
+
+    /**
+     * 分数
+     */
+    GameStage.prototype.drawScore = function () {
+      canvasContext.save()
+      canvasContext.font = 30 * dimensionRatio + 'px 微软雅黑'
+      canvasContext.fillText('分数: ' + this.score, 10 * dimensionRatio, 30 * dimensionRatio)
+      canvasContext.restore()
+    }
+
+    /**
+     * bomb
+     */
+    GameStage.prototype.drawBomb = function () {
+      var bombImage, i, x
+      if (this.me && this.me.bomb) {
+        bombImage = images['bomb']
+        x = canvasWidth - (bombImage.width - 10) * dimensionRatio
+        for (i = 0; i < this.me.bomb; i++) {
+          canvasContext.drawImage(bombImage, canvasWidth - (bombImage.width + 10) * dimensionRatio, i * (bombImage.height + 10) * dimensionRatio, bombImage.width * dimensionRatio, bombImage.height * dimensionRatio)
+        }
+      }
+    }
+
+    /**
+     * 随机位置创建物体，在创建敌机时保证不重合
+     * @param  {String} name
+     * @param  {String} type
+     * @return {StageObject}
+     */
+    GameStage.prototype.createObjectRandomly = function (name, type) {
+      var stageObject
+      var randomPosition = function (so) {
+        so.centerX = parseInt(Math.random() * (canvasWidth - stageObject.width), 10) + stageObject.width / 2
+        so.centerY = -stageObject.height / 2
+      }
+      switch (type) {
+        case 'enemy':
+          stageObject = new Enemy('plain' + name)
+          randomPosition(stageObject)
+          stageObject.speed = 3 - name + .5
+          break
+        case 'prop':
+          stageObject = new Prop('prop' + name)
+          randomPosition(stageObject)
+          break
+        default:
+          stageObject = new StageObject(name, type)
+      }
+      return stageObject
+    }
+
+    /**
+     * 随机创建敌机
+     */
+    GameStage.prototype.createEnemyRandomly = function () {
+      var enemyType, enemy
+      if (this.stage < 1)
+        enemyType = 1
+      else if (this.stage < 5)
+        enemyType = Math.random() > 0.3 ? 1 : 2
+      else
+        enemyType = (parseInt(Math.random() * 100, 10)) % 3 + 1
+      enemy = this.createObjectRandomly(enemyType, 'enemy')
+      enemy.life = Math.pow(2, enemyType)
+      enemy.score = Math.pow(2, enemyType) * 100
+      enemy.hotPoints = Enemy.hotPointsMap[enemyType]
+      this.enemies.push(enemy)
+    }
+
+    /**
+     * 补给
+     */
+    GameStage.prototype.createProp = function () {
+      if (Date.now() - this.lastPropTimeStamp < this.propTimeSpan)
+        return
+      this.lastPropTimeStamp = Date.now()
+      var randomNumber = parseInt(Math.random() * 10, 10)
+      if (randomNumber === 1 || randomNumber === 2) {
+        this.props.push(this.createObjectRandomly(randomNumber, 'prop'))
+      }
+    }
+
+    /**
+     * 发射子弹
+     */
+    GameStage.prototype.shot = function () {
+      if (this.me && this.me.canShot()) {
+        this.me.lastShotTimeStamp = Date.now()
+        var cartridge = new Cartridge(this.me.cartridgeType)
+        cartridge.speed = parseInt(this.me.power * 5, 10)
+        cartridge.centerX = this.me.centerX + 1
+        cartridge.centerY = this.me.centerY - this.me.height * dimensionRatio / 2 - cartridge.height / 2 * dimensionRatio
+        this.cartridges.push(cartridge)
+      }
+    }
+
+    /**
+     * 使用炮弹
+     */
+    GameStage.prototype.bomb = function () {
+      this.me.bomb--
+      this.deads = this.deads.concat(this.enemies)
+      this.enemies = []
+      while (this.enemies.length < this.enemyCount) {
+        this.createEnemyRandomly()
+      }
+    }
+
+    /**
+     * 游戏结束
+     */
+    GameStage.prototype.gameOver = function () {
+      canvasContext.save()
+      canvasContext.beginPath()
+      canvasContext.lineWidth = 3
+      canvasContext.fillStyle = 'rgba(195, 201, 201, .9)'
+      canvasContext.strokeStyle = '#000'
+
+      var radius = 10
+      var modalYStart = canvasHeight * .3
+      var modalYEnd = canvasHeight * .7
+      var modalXStart = canvasWidth * .1
+      var modalXEnd = canvasWidth * .9
+
+      // 圆角矩形
+      canvasContext.moveTo(modalXStart + radius, modalYStart)
+      canvasContext.lineTo(modalXEnd - radius, modalYStart)
+      canvasContext.arcTo(modalXEnd, modalYStart, modalXEnd, modalYStart + radius, radius)
+      canvasContext.lineTo(modalXEnd, modalYEnd - radius)
+      canvasContext.arcTo(modalXEnd, modalYEnd, modalXEnd - radius, modalYEnd, radius)
+      canvasContext.lineTo(modalXStart + radius, modalYEnd)
+      canvasContext.arcTo(modalXStart, modalYEnd, modalXStart, modalYEnd - radius, radius)
+      canvasContext.lineTo(modalXStart, modalYStart + radius)
+      canvasContext.arcTo(modalXStart, modalYStart, modalXStart + 10, modalYStart, radius)
+
+      // 框内的线
+      var headerY = modalYStart + (modalYEnd - modalYStart) * .2
+      var footerY = modalYEnd - (modalYEnd - modalYStart) * .2
+      var headerHeight = headerY - modalYStart
+
+      canvasContext.moveTo(modalXStart, headerY)
+      canvasContext.lineTo(modalXEnd, headerY)
+      canvasContext.moveTo(modalXStart, footerY)
+      canvasContext.lineTo(modalXEnd, footerY)
+      canvasContext.fill()
+      canvasContext.stroke()
+
+      // 文字
+      var text = '游戏得分'
+      var score = '' + this.score
+      var restart = touchDevice ? '点击屏幕继续' : 'Enter继续'
+      var fontSize = parseInt(headerHeight * .6)
+
+      canvasContext.textAlign = 'center'
+      canvasContext.textBaseline = 'middle'
+      canvasContext.fillStyle = '#000'
+      canvasContext.font = fontSize + 'px 微软雅黑'
+
+      canvasContext.fillText(text, canvasWidth / 2, modalYStart + headerHeight / 2)
+      canvasContext.fillText(score, canvasWidth / 2, modalYStart + (modalYEnd - modalYStart) / 2)
+      canvasContext.fillText(restart, canvasWidth / 2, modalYEnd - headerHeight / 2)
+
+      canvasContext.restore()
+    }
+
+    /**
+     * 移动
+     */
+    GameStage.prototype.move = function () {
+      var move = function (movers) {
+        var mover
+        var moversLength = movers.length
+        var outOfStages = []
+        for (var i = 0; i < moversLength; i++) {
+          mover = movers[i]
+          mover.move()
+          if (mover.isOutOfStage()) {
+            outOfStages.push(mover)
+          }
+        }
+
+        outOfStages.forEach(function (outOfStage) {
+          movers.splice(movers.indexOf(outOfStage), 1)
+          if (outOfStage.type === 'enemy') {
+            this.createEnemyRandomly()
+          }
+        }.bind(this))
+      }.bind(this)
+
+      move(this.enemies)
+      move(this.props)
+      move(this.cartridges)
+    }
+
+    /**
+     * 舞台上所有碰撞检测
+     */
+    GameStage.prototype.hitCheck = function () {
+      var check = function (src, dest, callback) {
+        if (!src)
+          return
+        var hitData
+        if (Array.isArray(src)) {
+          var srcLength = src.length
+          for (var i = 0; i < srcLength; i++) {
+            hitData = src[i].isHitSome(dest)
+            if (hitData) {
+              callback(src[i], hitData.index, hitData.object)
+              return
+            }
+          }
+        } else {
+          hitData = src.isHitSome(dest)
+          if (hitData)
+              callback(src, hitData.index, hitData.object)
+        }
+      }
+
+      // 炮弹与敌机的碰撞检测
+      check(this.cartridges, this.enemies, function (cartridge, enemyIndex, enemy) {
+        this.cartridges.splice(this.cartridges.indexOf(cartridge), 1)
+        enemy.life -= this.me.power
+        if (enemy.life <= 0) {
+          this.enemies.splice(enemyIndex, 1)
+          this.score += enemy.score
+          this.stage = this.score / 3000
+          this.createEnemyRandomly()
+          this.deads.push(enemy)
+        } else if (enemy.life == 1) {
+          enemy.hurt()
+        }
+      }.bind(this))
+
+      // 与敌机的碰撞检测
+      var enemiesLength = this.enemies.length
+      var points = []
+      for (var i = 0; i < enemiesLength; i++) {
+        for (var j = 0; j < this.enemies[i].hotPoints.length; j++) {
+          points.push({x: this.enemies[i].centerX + this.enemies[i].hotPoints[j]['x'] * dimensionRatio, y: this.enemies[i].centerY + this.enemies[i].hotPoints[j]['y'] * dimensionRatio})
+        }
+      }
+
+      if (this.me) {
+        canvasContext.beginPath()
+        canvasContext.moveTo(this.me.centerX + this.me.hotPoints[0]['x'] * dimensionRatio, this.me.centerY + this.me.hotPoints[0]['y'] * dimensionRatio)
+        canvasContext.lineTo(this.me.centerX + this.me.hotPoints[1]['x'] * dimensionRatio, this.me.centerY + this.me.hotPoints[1]['y'] * dimensionRatio)
+        canvasContext.lineTo(this.me.centerX + this.me.hotPoints[2]['x'] * dimensionRatio, this.me.centerY + this.me.hotPoints[2]['y'] * dimensionRatio)
+        for (i = 0; i < points.length; i++) {
+          if (canvasContext.isPointInPath(points[i]['x'], points[i]['y'])) {
+            this.isGameOver = true
+            this.me.alternative = null
+            this.cartridges = []
+            this.deads.push(this.me)
+            this.me = null
+            break
+          }
+        }
+      }
+
+      // 与补给的碰撞检测
+      check(this.me, this.props, function (me, propIndex, prop) {
+        switch (prop.name) {
+          case 'prop1':
+            if (me.bomb < me.maxBombs)
+              me.bomb++
+            break
+          case 'prop2':
+            if (me.power < me.maxPower) {
+              me.power += .5
+              if (me.power >= 2) {
+                me.cartridgeType = 'cartridge_power'
+              }
+              if (me.shotDuration >= 300) {
+                me.shotDuration -= 100
+              }
+            }
+        }
+        this.props.splice(propIndex, 1)
+      }.bind(this))
+    }
+
+    function StageObject (name, type) {
+      this.type = type
+      this.name = name
+      this.image = images[name]
+      this.hotPoints = []
+      if (images[name + '_2']) {
+        this.alternative = images[name + '_2']
+        this.alternativeSpan = 50
+        this.lastAlternativeTimeStamp = Date.now()
+      }
+      this.width = this.image.width
+      this.height = this.image.height
+      this.centerX
+      this.centerY
+    }
+
+    /**
+     * 是否与某个撞击
+     * @param  {StageObject}  stageObject
+     * @return {Boolean}
+     */
+    StageObject.prototype.isHitSomeone = function (stageObject) {
+      var minY = Math.min(this.centerY - this.height / 2 * dimensionRatio, stageObject.centerY - stageObject.height / 2 * dimensionRatio)
+      var maxY = Math.max(this.centerY + this.height / 2 * dimensionRatio, stageObject.centerY + stageObject.height / 2 * dimensionRatio)
+      var minX = Math.min(this.centerX - this.width / 2 * dimensionRatio, stageObject.centerX - stageObject.width / 2 * dimensionRatio)
+      var maxX = Math.max(this.centerX + this.width / 2 * dimensionRatio, stageObject.centerX + stageObject.width / 2 * dimensionRatio)
+      var distanceY = maxY - minY
+      var distanceX = maxX - minX
+
+      return distanceY <= this.height * dimensionRatio + stageObject.height * dimensionRatio && distanceX <= this.width * dimensionRatio + stageObject.width * dimensionRatio
+    }
+
+    /**
+     * 是否与某些撞击
+     * @param  {Array}  stageObjects
+     * @return {Boolean}
+     */
+    StageObject.prototype.isHitSome = function (stageObjects) {
+      var stageObjectsLength = stageObjects.length
+      for (var i = 0; i < stageObjectsLength; i++) {
+        if (this.isHitSomeone(stageObjects[i]))
+          return {isHit: true, index: i, object: stageObjects[i]}
+      }
+      return false
+    }
+
+    /**
+     * 主机
+     */
+    function Plane (name) {
+      StageObject.call(this, name, 'me')
+      this.lastShotTimeStamp = Date.now()
+      this.shotDuration = 1000
+      this.bomb = 0
+      this.maxBombs = 5
+      this.deadImages = []
+      this.cartridgeType = 'cartridge'
+      this.power = 1
+      this.maxPower = 8
+      this.hotPoints = [{x: this.width / 2, y: 22}, {x: -this.width / 2, y: 22}, {x: 0, y: -this.height / 2}]
+      var i = 1, dieName
+      while (true) {
+        dieName = name + '_die' + (i++)
+        if (!images[dieName]) {
+          break
+        }
+        this.deadImages.push(images[dieName])
+      }
+    }
+
+    Plane.prototype.moveTo = function (coordinateX, coordinateY) {
+      this.centerX = coordinateX
+      this.centerY = coordinateY
+    }
+    Plane.prototype.canShot = function () {
+      return Date.now() - this.lastShotTimeStamp >= this.shotDuration
+    }
+    Object.setPrototypeOf(Plane.prototype, StageObject.prototype)
+
+    /**
+     * 从上往下运动的物体
+     */
+    function ObjectFromSky (name, type) {
+      StageObject.call(this, name, type)
+      this.speed
+    }
+    ObjectFromSky.prototype.move = function () {
+      this.centerY += this.speed * dimensionRatio
+    }
+    ObjectFromSky.prototype.isOutOfStage = function () {
+      return this.centerY > (canvasHeight + this.height / 2 * dimensionRatio)
+    }
+    Object.setPrototypeOf(ObjectFromSky.prototype, StageObject.prototype)
+
+    /**
+     * 敌机
+     */
+    function Enemy (name) {
+      ObjectFromSky.call(this, name, 'enemy')
+      this.speed
+      this.score
+      this.life
+      this.deadImages = []
+      var i = 1, dieName
+      while (true) {
+        dieName = name + '_die' + (i++)
+        if (!images[dieName]) {
+          break
+        }
+        this.deadImages.push(images[dieName])
+      }
+    }
+    Enemy.prototype.hurt = function () {
+      if (images[this.name + '_hurt']) {
+        this.image = images[this.name + '_hurt']
+        this.alternative = null
+      }
+    }
+    Enemy.hotPointsMap = {
+      1: [{x: 23, y: 0}, {x: -23, y: 0}, {x: 0, y: 18}],
+      2: [{x: 0, y: 40}, {x: 32, y: 0}, {x: -32, y: 0}],
+      3: [{x: 80, y: 80}, {x: -80, y: 80}, {x: 34, y: 122}, {x: -34, y: 122}]
+    }
+    Object.setPrototypeOf(Enemy.prototype, ObjectFromSky.prototype)
+
+    /**
+     * 补给
+     */
+    function Prop (name) {
+      ObjectFromSky.call(this, name, 'prop')
+      this.speed = 1
+    }
+    Object.setPrototypeOf(Prop.prototype, ObjectFromSky.prototype)
+
+    /**
+     * 炮弹
+     */
+    function Cartridge (name) {
+      StageObject.call(this, name, 'cartridge')
+      this.speed = 5
+    }
+    Cartridge.prototype.move = function () {
+      this.centerY -= this.speed * dimensionRatio
+    }
+    Cartridge.prototype.isOutOfStage = function () {
+      return this.centerY < -this.height / 2
+    }
+    Object.setPrototypeOf(Cartridge.prototype, StageObject.prototype)
+  })()
+  </script>
+</body>
+</html>
